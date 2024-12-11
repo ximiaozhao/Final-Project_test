@@ -32,18 +32,10 @@ library(cowplot)
 ```
 
 ```{r}
-# Get NYT Trump November Articles 
-## 2016
-mykey <- read_rtf("mykey.rtf") #NYT API Key
-url_2016 <- paste0("https://api.nytimes.com/svc/archive/v1/2016/11.json?api-key=", mykey)
-resquest_2016 <- GET(url_2016) #Nov 2016 articles
-
-response_2016 <- content(resquest_2016, as = "text", encoding = "UTF-8")
-nytdata_2016 <- fromJSON(response_2016, flatten = TRUE) 
-article_2016 <- nytdata_2016$response$docs 
-
-#Select articles headline contains "Trump"
-trump_2016 <- article_2016[grepl("Trump", article_2016$headline.main, ignore.case = TRUE),]
+# DONT SHOW IN REPORT!!!
+# Load Data 
+trump_2016 <- read.csv("trump_2016.csv")
+trump_2024 <- read.csv("trump_2024.csv")
 
 #Create df that only contain data needed
 trump_df_2016 <- data.frame(
@@ -52,16 +44,6 @@ trump_df_2016 <- data.frame(
   abstract = trump_2016$abstract,
   snippet = trump_2016$snippet,
   pub.date = trump_2016$pub_date)
-
-## 2024
-url_2024 <- paste0("https://api.nytimes.com/svc/archive/v1/2024/11.json?api-key=", mykey)
-resquest_2024 <- GET(url_2024) #Nov 2024 articles
-
-response_2024 <- content(resquest_2024, as = "text", encoding = "UTF-8")
-nytdata_2024 <- fromJSON(response_2024, flatten = TRUE) 
-article_2024 <- nytdata_2024$response$docs 
-
-trump_2024 <- article_2024[grepl("Trump", article_2024$headline.main, ignore.case = TRUE),]
 
 trump_df_2024 <- data.frame(
   headline = trump_2024$headline.main,
