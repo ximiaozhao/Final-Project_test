@@ -1,0 +1,513 @@
+---
+title: "Comparing New York Times Coverage on Trump 2016 vs. 2024"
+author: "Ximiao Zhao"
+subtitle: Term Paper for SURV727
+output: pdf_document
+---
+
+```{r}
+library(httr)
+library(jsonlite)
+library(striprtf)
+library(qdap)
+library(SentimentAnalysis)
+library(quanteda)
+library(vader)
+library(ggplot2)
+library(RedditExtractoR)
+library(tidyr)
+library(dplyr)
+library(gridExtra)
+library(lubridate)
+library(topicmodels)
+library(knitr)
+library(reshape2)
+library(kableExtra)
+library(webshot2)
+library(tibble)
+library(patchwork)
+library(grid)
+library(emmeans)
+library(cowplot)
+```
+
+```{r}
+# Get NYT Trump November Articles 
+## 2016
+mykey <- read_rtf("mykey.rtf") #NYT API Key
+url_2016 <- paste0("https://api.nytimes.com/svc/archive/v1/2016/11.json?api-key=", mykey)
+resquest_2016 <- GET(url_2016) #Nov 2016 articles
+
+response_2016 <- content(resquest_2016, as = "text", encoding = "UTF-8")
+nytdata_2016 <- fromJSON(response_2016, flatten = TRUE) 
+article_2016 <- nytdata_2016$response$docs 
+
+#Select articles headline contains "Trump"
+trump_2016 <- article_2016[grepl("Trump", article_2016$headline.main, ignore.case = TRUE),]
+
+#Create df that only contain data needed
+trump_df_2016 <- data.frame(
+  headline = trump_2016$headline.main,
+  lead_Paragraph = trump_2016$lead_paragraph,
+  abstract = trump_2016$abstract,
+  snippet = trump_2016$snippet,
+  pub.date = trump_2016$pub_date)
+
+## 2024
+url_2024 <- paste0("https://api.nytimes.com/svc/archive/v1/2024/11.json?api-key=", mykey)
+resquest_2024 <- GET(url_2024) #Nov 2024 articles
+
+response_2024 <- content(resquest_2024, as = "text", encoding = "UTF-8")
+nytdata_2024 <- fromJSON(response_2024, flatten = TRUE) 
+article_2024 <- nytdata_2024$response$docs 
+
+trump_2024 <- article_2024[grepl("Trump", article_2024$headline.main, ignore.case = TRUE),]
+
+trump_df_2024 <- data.frame(
+  headline = trump_2024$headline.main,
+  lead_Paragraph = trump_2024$lead_paragraph,
+  abstract = trump_2024$abstract,
+  snippet = trump_2024$snippet,
+  pub.date = trump_2024$pub_date)
+```
+
+
+```{r}
+## Dictionary-based method 2016 vs. 2024
+#Dictionary-based method
+sent_head_2016 <- analyzeSentiment(iconv(as.character(trump_df_2016$headline),
+                                         to='UTF-8'))
+sent_head_2024 <- analyzeSentiment(iconv(as.character(trump_df_2024$headline),
+                                         to='UTF-8'))
+sent_lead_2016 <- analyzeSentiment(iconv(as.character(trump_df_2016$lead_Paragraph), 
+                                         to = 'UTF-8'))
+sent_lead_2024 <- analyzeSentiment(iconv(as.character(trump_df_2024$lead_Paragraph), 
+                                         to = 'UTF-8'))
+
+sent_lead_2016$year <- "2016"
+sent_lead_2016$Source <- "Leadparagraph"
+sent_lead_2024$year <- "2024"
+sent_lead_2024$Source <- "Leadparagraph"
+
+sent_head_2016$Source <- "Headline"
+sent_head_2024$Source <- "Headline"
+sent_head_2016$year <- "2016"
+sent_head_2024$year <- "2024"
+sent_combined_head <- rbind(sent_head_2016,sent_head_2024)
+sent_combined_lead <- rbind(sent_lead_2016,sent_lead_2024)
+
+sent_combined_head <- sent_combined_head %>%
+  select(year, Source, NegativityGI, PositivityGI, SentimentGI) %>%
+  pivot_longer(
+    cols = c(NegativityGI, PositivityGI, SentimentGI),
+    names_to = "SentimentType",
+    values_to = "Score")
+
+ggplot(sent_combined_head, aes(x = year, y = Score, fill = SentimentType)) +
+  geom_boxplot() +
+  labs(title = "NYT Headline Dictionary-based Sentiment Comparison 2016 vs 2024",
+       x = "Year",
+       y = "Sentiment Score",
+       caption = "Figure 1") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2")
+```
+
+
+```{r}
+## Vader score 2016 vs. 2024 for Headline
+#Headline
+va_head2016 <- vader_df(trump_df_2016$headline)
+va_head2024 <- vader_df(trump_df_2024$headline)
+va_head2016$pub.date <- trump_df_2016$pub.date
+va_head2024$pub.date <- trump_df_2024$pub.date
+va_head2016$year <- "2016"
+va_head2024$year <- "2024"
+va_head <- rbind(va_head2016, va_head2024)
+
+va_head$pub.date <- as.POSIXct(va_head$pub.date, format = "%Y-%m-%dT%H:%M:%OS%z")
+va_head$date <- format(as.Date(va_head$pub.date), "%m-%d")
+
+va_head.new <- va_head %>%
+  group_by(year, date) %>%
+  summarize(avg_compound = mean(compound, na.rm = TRUE),
+            median_compound = median(compound,na.rm = TRUE))
+va_head.new$date <- as.numeric(as.factor(va_head.new$date))
+
+ggplot(va_head.new, 
+       aes(x = date, y = avg_compound, color = year, group = year)) +
+  geom_line(linewidth = 1) +
+  labs(title = "Vader Sentiment Scores of NYT Trump Headline Over Time 2016 vs. 2024",
+       x = "Publication Date in November",
+       y = "Average Compound Score",
+       color = "Year",
+       caption = "Figure 2") +
+  scale_x_continuous(breaks = seq(0, max(va_head.new$date), by = 2)) +
+  theme_minimal() +
+  scale_color_manual(values = c("2016" = "skyblue", "2024" = "darkblue"))
+```
+
+
+```{r}
+#Look at article types:2016
+temp.sent_head_2016 <- sent_head_2016
+temp.sent_head_2016$type <- trump_2016$type_of_material
+
+temp.sent2016 <- temp.sent_head_2016 %>%
+  select(year, type, NegativityGI, PositivityGI, SentimentGI, ) %>%
+  pivot_longer(
+    cols = c(NegativityGI, PositivityGI, SentimentGI),
+    names_to = "SentimentType",
+    values_to = "Score")
+
+filter.temp.sent2016 <- temp.sent2016 %>%
+  filter(!type %in% c("Slideshow", "Video", "Interactive Feature", "Schedule", "Text"))
+summary(aov(Score ~ type * SentimentType, data = filter.temp.sent2016))
+
+y_limits <- c(-0.8, 0.8)
+y_breaks <- seq(-0.8, 0.8, by = 0.2)
+
+type_sent_2016 <- ggplot(filter.temp.sent2016, aes(x = type, y = Score, fill = SentimentType)) +
+  geom_boxplot(position = position_dodge(width = 0.8)) +
+  theme_minimal() +
+  labs(
+    title = "2016",
+    x = NULL,
+    y = "Sentiment Score"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")+
+  scale_y_continuous(limits = y_limits, breaks = y_breaks)
+
+filtered_data <- filter(filter.temp.sent2016, SentimentType == "SentimentGI")
+summary(aov(Score ~ type, data = subset(filter.temp.sent2016, SentimentType == "NegativityGI")))
+summary(aov(Score ~ type, data = subset(filter.temp.sent2016, SentimentType == "PositivityGI")))
+summary(aov(Score ~ type, data = subset(filter.temp.sent2016, SentimentType == "SentimentGI")))
+
+#Look at article type: 2024
+temp.sent_head_2024 <- sent_head_2024
+temp.sent_head_2024$type <- trump_2024$type_of_material
+temp.sent2024 <- temp.sent_head_2024 %>%
+  select(year, type, NegativityGI, PositivityGI, SentimentGI, ) %>%
+  pivot_longer(
+    cols = c(NegativityGI, PositivityGI, SentimentGI),
+    names_to = "SentimentType",
+    values_to = "Score")
+summary(aov(Score ~ type * SentimentType, data = temp.sent2024))
+
+filter.temp.sent2024 <- temp.sent2024 %>%
+  filter(!type %in% c("Slideshow", "Video", "Interactive Feature"))
+
+summary(aov(Score ~ type * SentimentType, data = filter.temp.sent2024))
+
+type_sent_2024 <-ggplot(filter.temp.sent2024, aes(x = type, y = Score, fill = SentimentType)) +
+  geom_boxplot(position = position_dodge(width = 0.8)) +
+  theme_minimal() +
+  labs(
+    title = "2024",
+    x = NULL,
+    y = NULL) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(limits = y_limits, breaks = y_breaks)
+
+combined_type_sent <- grid.arrange(
+  type_sent_2016, type_sent_2024,
+  ncol = 2,
+  top = textGrob(
+    "Article Type and Sentiment Scores Interaction",
+    gp = gpar(fontsize = 16)),
+  bottom = textGrob(
+    "Article Type
+    Figure 3",
+    gp = gpar(fontsize = 12)))
+```
+
+```{r}
+# Sentiment Analysis
+## Compare frequent terms 2016 vs. 2024
+#Remove stop words
+custom_stopwords <- c("trump", "donald", "trumpa", "trumps", "york", "president", "state", "mr", "presidentelect", "heres", "day", "need", "know", "election", "say", "trump's", "here's", "new", "Trump's","Trump’s","us", "wednesday", "tuesday", "monday", "US", "U.S", "Here's", "Says", "pick", "picks", "Pick", "Picks", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z")
+
+custom_stopwords_para <- c("trump", "donald", "trumpa", "trumps", "york", "president", "state", "mr", "presidentelect", "heres", "day", "need", "know", "election", "say", "trump's", "here's", "new", "Trump's","Trump’s","us", "wednesday", "tuesday", "monday", "US", "U.S", "Here's", "Here’s", "Says", "pick", "picks", "Pick", "Picks", "one", "said", "get", "morning", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z")
+
+clean_trump2016_headline <- tokens(trump_df_2016$headline) %>%
+  tokens_remove(stopwords("english")) %>%
+  tokens_remove(custom_stopwords)
+
+clean_trump2024_headline <- tokens(trump_df_2024$headline) %>%
+  tokens_remove(stopwords("english")) %>%
+  tokens_remove(custom_stopwords)
+
+freq2016_head <- freq_terms(clean_trump2016_headline, 20)
+freq2016_head_plot <- ggplot(data = freq2016_head, aes(x = FREQ, y = reorder(WORD, FREQ))) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "2016",
+    x = "Frequency",
+       y = "Terms") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+freq2024_head <- freq_terms(clean_trump2024_headline, 20)
+freq2024_head_plot <- ggplot(data = freq2024_head, aes(x = FREQ, y = reorder(WORD, FREQ))) +
+  geom_bar(stat = "identity", fill = "darkblue") +
+  labs(title = "2024",
+    x = "Frequency",
+       y = "Terms") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+combined_head_plot <- freq2016_head_plot | freq2024_head_plot
+
+combined_head_plot <- grid.arrange(
+  freq2016_head_plot, freq2024_head_plot,
+  ncol = 2,
+  top = textGrob(
+    "Top 20 Frequent Terms in NYT Trump Headlines 2016 vs 2024",
+    gp = gpar(fontsize = 16)),
+  bottom = textGrob(
+    "Figure 4",
+    gp = gpar(fontsize = 12)))
+```
+
+
+```{r}
+# Topic Modeling 2016 vs. 2024
+#Headline 2016
+#Tokenization
+corpus_head2016 <- corpus(trump_df_2016$headline,
+                          docid_field = "doc_id",
+                          text_field = "text")
+token_head2016 <- tokens(corpus_head2016, 
+                         remove_punct = TRUE, 
+                         remove_numbers = TRUE, 
+                         remove_symbols = TRUE) %>% 
+                         tokens_tolower() 
+# Lemmatization
+lemmaData <- read.csv2("~/Desktop/MS-SUDS/2024Fall/SURV727 Fundamental of Data Display Computing/Final Paper/baseform_en.tsv", 
+                       sep="\t", 
+                       header=FALSE, 
+                       encoding = "UTF-8", 
+                       stringsAsFactors = F)
+#Check if have NA
+anyNA(lemmaData$V1)
+anyNA(lemmaData$V2)
+lemmaData <- lemmaData[!is.na(lemmaData$V1) & !is.na(lemmaData$V2), ] #Drop NA
+
+proc_head2016 <-  tokens_replace(token_head2016, 
+                                 lemmaData$V1, 
+                                 lemmaData$V2,
+                                 valuetype = "fixed")
+
+#Remove stop word based on previous experiments
+proc_head2016 <- proc_head2016 %>% 
+  tokens_remove(stopwords("english")) %>%
+  tokens_remove(custom_stopwords)
+
+#Create DTM 
+dtm_head2016 <- dfm(proc_head2016)
+#dtm_head2016_viz <- dtm_head2016 #save copy for visualization
+
+#Trimming
+dtm_head2016 <- dfm_trim(dtm_head2016, 
+                         min_docfreq = 10, 
+                         max_docfreq = ndoc(dtm_head2016))
+
+#Keep only letters... brute force
+dtm_head2016  <- dfm_select(dtm_head2016, 
+                            pattern = "[a-z]", 
+                            valuetype = "regex", 
+                            selection = 'keep')
+colnames(dtm_head2016) <- stringi::stri_replace_all_regex(colnames(dtm_head2016), 
+                                                          "[^_a-z]","")
+dtm_head2016 <- dfm_compress(dtm_head2016, "features")
+
+#Drop NA rows
+sel_idx_2016 <- rowSums(dtm_head2016) > 0
+dtm_head2016 <- dtm_head2016[sel_idx_2016, ]
+
+#Fit LDA model
+# Set K=7 based on previous experiments
+K_2016 <- 5
+set.seed(3453) #UID last 4 digits
+LDA_head2016 <- LDA(dtm_head2016, K_2016, method="Gibbs", 
+                    control=list(iter = 500, 
+                                 verbose = 25, 
+                                 alpha = 1/7)) # 1/K
+
+#Select top terms per topic
+top_head2016 <- terms(LDA_head2016, 10)
+#Paste them into a string for interpret
+topic_head2016 <- apply(top_head2016, #this contains only topics
+                        2, 
+                        paste, 
+                        collapse=" ")
+
+#Calculate average probability
+result_head2016 <- posterior(LDA_head2016)
+theta_head2016 <- result_head2016$topics
+topic_p <- colSums(theta_head2016) / nrow(dtm_head2016)
+names(topic_p) <- topic_head2016
+sorted_head2016 <- sort(topic_p, decreasing = TRUE)
+
+
+#Headline 2024
+#Tokenization
+corpus_head2024 <- corpus(trump_df_2024$headline,
+                          docid_field = "doc_id",
+                          text_field = "text")
+token_head2024 <- tokens(corpus_head2024, 
+                         remove_punct = TRUE, 
+                         remove_numbers = TRUE, 
+                         remove_symbols = TRUE) %>% 
+  tokens_tolower() 
+
+proc_head2024 <-  tokens_replace(token_head2024, 
+                                 lemmaData$V1, 
+                                 lemmaData$V2,
+                                 valuetype = "fixed")
+
+#Remove stop word based on previous experiments
+proc_head2024 <- proc_head2024 %>% 
+  tokens_remove(stopwords("english")) %>%
+  tokens_remove(custom_stopwords)
+
+#Create DTM 
+dtm_head2024 <- dfm(proc_head2024)
+
+#Trimming
+dtm_head2024 <- dfm_trim(dtm_head2024, 
+                         min_docfreq = 10, 
+                         max_docfreq = ndoc(dtm_head2024))
+
+#Keep only letters... brute force
+dtm_head2024  <- dfm_select(dtm_head2024, 
+                            pattern = "[a-z]", 
+                            valuetype = "regex", 
+                            selection = 'keep')
+colnames(dtm_head2024) <- stringi::stri_replace_all_regex(colnames(dtm_head2024), 
+                                                          "[^_a-z]","")
+dtm_head2024 <- dfm_compress(dtm_head2024, "features")
+#dtm_head2024.save <- dtm_head2024 #save copy
+
+#Drop NA rows
+sel_idx_2024 <- rowSums(dtm_head2024) > 0
+dtm_head2024 <- dtm_head2024[sel_idx_2024, ]
+
+#Fit LDA model
+# Set K=7 based on previous experiments
+K_2024 <- 5
+set.seed(3453) #UID last 4 digits
+LDA_head2024 <- LDA(dtm_head2024, K_2024, method="Gibbs", 
+                    control=list(iter = 500, 
+                                 verbose = 25, 
+                                 alpha = 1/7)) # 1/K
+
+#Select top terms per topic
+top_head2024 <- terms(LDA_head2024, 10)
+#Paste them into a string for interpret
+topic_head2024 <- apply(top_head2024, #this contains only topics
+                        2, 
+                        paste, 
+                        collapse=" ")
+
+#Calculate average probability
+result_head2024 <- posterior(LDA_head2024)
+theta_head2024 <- result_head2024$topics
+topic_p_2024 <- colSums(theta_head2024) / nrow(dtm_head2024)
+names(topic_p_2024) <- topic_head2024
+sorted_head2024 <- sort(topic_p_2024, decreasing = TRUE)
+
+#Organize result
+df_head2016 <- data.frame(
+  Year = "2016",
+  Top_Topic = names(sorted_head2016))
+df_head2024 <- data.frame(
+  Year = "2024",
+  Top_Topic = names(sorted_head2024))
+df_combined_head <- bind_rows(df_head2016, df_head2024)
+```
+
+
+```{r}
+#Visualization
+#2016
+pubdate_2016_viz <- trump_df_2016$pub.date[sel_idx_2016]
+viz_head2016 <- data.frame(dates = as.Date(pubdate_2016_viz), theta_head2016)
+
+viz_head2016_trend <- viz_head2016 %>%
+  group_by(dates) %>%
+  summarise(across(starts_with("X"), \(x) mean(x, na.rm = TRUE)))
+
+terms(LDA_head2016, 10)
+topic_head2016
+
+colnames(viz_head2016_trend)[colnames(viz_head2016_trend) != "dates"] <- c(
+  "Obama meet voter transition keep business may brief security see",
+  "Climate policy change can look america help presidency time see",
+  "Brief Clinton evening Hillary Friday obama business security help win",
+  "Victory tower white move deal time may help presidency win",
+  "Win vote fight right call see meet clinton white security")
+
+# Reshape for ggplot
+viz_head2016_long <- viz_head2016_trend %>%
+  pivot_longer(cols = -dates, names_to = "Topic", values_to = "Proportion")
+
+# Plot trends
+plot_head2016 <- ggplot(viz_head2016_long, aes(x = dates, y = Proportion, color = Topic)) +
+  geom_line(size = 0.7) +
+  labs(
+    title = "2016 NYT Trump Coverage Headline Key Topic Trends Over Time",
+    x = "Publication Date",
+    y = "Average Topic Proportion"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +  
+  guides(color = guide_legend(nrow = 7))
+#ggsave(filename = "~/Desktop/MS-SUDS/2024Fall/SURV727 Fundamental of Data Display Computing/Final Paper/2016 NYT Trump Coverage Headline Key Topic Trends Over Time.jpg",width = 8, height = 6, units = "in")
+
+#2024
+pubdate_2024_viz <- trump_df_2024$pub.date[sel_idx_2024]
+viz_head2024 <- data.frame(dates = as.Date(pubdate_2024_viz), theta_head2024)
+
+viz_head2024_trend <- viz_head2024 %>%
+  group_by(dates) %>%
+  summarise(across(starts_with("X"), \(x) mean(x, na.rm = TRUE)))
+
+terms(LDA_head2024, 10)
+topic_head2024
+
+colnames(viz_head2024_trend)[colnames(viz_head2024_trend) != "dates"] <- c(
+  "return secretary power big expect musk gaetz presidency choice cabinet",
+  "house second term white democrat lead administration first ally biden",
+  "win vote can republican first gop see musk ally heres",
+  "victory case harris end mean make ukraine choice biden presidency",
+  "plan tariff leader ukraine take cabinet make trade heres see")
+
+viz_head2024_long <- viz_head2024_trend %>%
+  pivot_longer(cols = -dates, names_to = "Topic", values_to = "Proportion")
+
+# Plot trends
+plot_head2024 <- ggplot(viz_head2024_long, aes(x = dates, y = Proportion, color = Topic)) +
+  geom_line(size = 0.7) +
+  labs(
+    title = "2024 NYT Trump Coverage Headline Key Topic Trends Over Time",
+    x = "Publication Date",
+    y = "Average Topic Proportion",
+    caption = "Figure 5"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")+  
+  guides(color = guide_legend(nrow = 7))
+
+kable_head <- knitr::kable(
+    df_combined_head,
+    col.names = c("Year", "Topic"),
+    caption = "Table 1: Topic Modeling for NYT Trump Headline 2016 vs. 2024",
+    row.names = FALSE,
+    format = "latex")
+kable_head
+```
+
+
+
+
+
