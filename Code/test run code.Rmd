@@ -1,0 +1,164 @@
+---
+title: "Comparing New York Times Coverage on Trump 2016 vs. 2024"
+author: "Ximiao Zhao"
+subtitle: Term Paper for SURV727
+output: pdf_document
+---
+
+----- These are the codes for experiment and test-run that are not include in the report
+
+```{r}
+#Sentiment Analysis for Lead Paragraph--No use
+
+clean_trump2016_para <- tokens(trump_df_2016$lead_Paragraph) %>%
+  tokens_remove(stopwords("english")) %>%
+  tokens_remove(custom_stopwords_para)
+
+clean_trump2024_para <- tokens(trump_df_2024$lead_Paragraph) %>%
+  tokens_remove(stopwords("english")) %>%
+  tokens_remove(custom_stopwords_para)
+
+freq2016_para <- freq_terms(clean_trump2016_para, 20)
+ggplot(data = freq2016_para, aes(x = FREQ, y = reorder(WORD, FREQ))) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Top 20 Frequent Terms in NYT Trump 2016 Lead Paragraph",
+       x = "Frequency",
+       y = "Terms") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+freq2024_para <- freq_terms(clean_trump2024_para, 20)
+ggplot(data = freq2024_para, aes(x = FREQ, y = reorder(WORD, FREQ))) +
+  geom_bar(stat = "identity", fill = "darkblue") +
+  labs(title = "Top 20 Frequent Terms in NYT Trump 2024 Lead Paragraph",
+       x = "Frequency",
+       y = "Terms") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# See if sentiment changes 7 days before and after election days
+trump_df_2016$pub.date <- as.POSIXct(trump_df_2016$pub.date, format = "%Y-%m-%dT%H:%M:%OS%z")
+trump_df_2016$date.only <- format(as.Date(trump_df_2016$pub.date), "%m-%d")
+trump_df_2016$year <- "2016"
+
+before_2016 <- subset(trump_df_2016, date.only < "11-08")
+after_2016 <- subset(trump_df_2016, date.only >= "11-08" & date.only < "11-15")
+
+before_sent_head2016 <- analyzeSentiment(iconv(as.character(before_2016$headline),
+                                         to='UTF-8'))
+after_sent_head2016 <- analyzeSentiment(iconv(as.character(after_2016$headline),
+                                           to='UTF-8'))
+
+before_sent_head2016$year <- "2016"
+before_sent_head2016$status <- "Before"
+after_sent_head2016$year <- "2016"
+after_sent_head2016$status <- "After"
+
+sent_ba_head2016 <- rbind(before_sent_head2016,after_sent_head2016)
+
+sent_ba_head2016 <- sent_ba_head2016 %>%
+  select(year, status, NegativityGI, PositivityGI, SentimentGI) %>%
+  pivot_longer(
+    cols = c(NegativityGI, PositivityGI, SentimentGI),
+    names_to = "SentimentType",
+    values_to = "Score")
+
+#Nothing significant
+t.test(Score ~ status, data = subset(sent_ba_head2016, SentimentType == "NegativityGI"))
+t.test(Score ~ status, data = subset(sent_ba_head2016, SentimentType == "PositivityGI"))
+t.test(Score ~ status, data = subset(sent_ba_head2016, SentimentType == "SentimentGI"))
+summary(aov(Score ~ status * SentimentType, data = sent_ba_head2016))
+
+ggplot(sent_ba_head2016, aes(x = status, y = Score, fill = SentimentType)) +
+  geom_boxplot() +
+  labs(title = "NYT Headline Dictionary-based Sentiment Comparison: Before vs. After",
+       x = "Status",
+       y = "Sentiment Score") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set3")  
+
+#Test for 2024
+trump_df_2024$pub.date <- as.POSIXct(trump_df_2024$pub.date, format = "%Y-%m-%dT%H:%M:%OS%z")
+trump_df_2024$date.only <- format(as.Date(trump_df_2024$pub.date), "%m-%d")
+trump_df_2024$year <- "2024"
+
+before_2024 <- subset(trump_df_2024, date.only < "11-05")
+after_2024 <- subset(trump_df_2024, date.only >= "11-05" & date.only < "11-09")
+
+before_sent_head2024 <- analyzeSentiment(iconv(as.character(before_2024$headline),
+                                               to='UTF-8'))
+after_sent_head2024 <- analyzeSentiment(iconv(as.character(after_2024$headline),
+                                              to='UTF-8'))
+
+before_sent_head2024$year <- "2024"
+before_sent_head2024$status <- "Before"
+after_sent_head2024$year <- "2024"
+after_sent_head2024$status <- "After"
+
+sent_ba_head2024 <- rbind(before_sent_head2024,after_sent_head2024)
+
+sent_ba_head2024 <- sent_ba_head2024 %>%
+  select(year, status, NegativityGI, PositivityGI, SentimentGI) %>%
+  pivot_longer(
+    cols = c(NegativityGI, PositivityGI, SentimentGI),
+    names_to = "SentimentType",
+    values_to = "Score")
+
+#SentimentGI found significant
+t.test(Score ~ status, data = subset(sent_ba_head2024, SentimentType == "NegativityGI"))
+t.test(Score ~ status, data = subset(sent_ba_head2024, SentimentType == "PositivityGI"))
+t.test(Score ~ status, data = subset(sent_ba_head2024, SentimentType == "SentimentGI"))
+summary(aov(Score ~ status * SentimentType, data = sent_ba_head2024))
+
+ggplot(sent_ba_head2024, aes(x = status, y = Score, fill = SentimentType)) +
+  geom_boxplot() +
+  labs(title = "NYT 2024 Headline Dictionary-based Sentiment Comparison: Before vs. After",
+       x = "Status",
+       y = "Sentiment Score") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set4")  
+
+#Test for Lead Paragraph 2016
+before_sent_lead2016 <- analyzeSentiment(iconv(as.character(before_2016$lead_Paragraph),
+                                               to='UTF-8'))
+after_sent_lead2016 <- analyzeSentiment(iconv(as.character(after_2016$lead_Paragraph),
+                                              to='UTF-8'))
+before_sent_lead2016$year <- "2016"
+before_sent_lead2016$status <- "Before"
+after_sent_lead2016$year <- "2016"
+after_sent_lead2016$status <- "After"
+
+sent_ba_lead2016 <- rbind(before_sent_lead2016,after_sent_lead2016)
+
+sent_ba_lead2016 <- sent_ba_lead2016 %>%
+  select(year, status, NegativityGI, PositivityGI, SentimentGI) %>%
+  pivot_longer(
+    cols = c(NegativityGI, PositivityGI, SentimentGI),
+    names_to = "SentimentType",
+    values_to = "Score")
+
+#Nothing significant
+t.test(Score ~ status, data = subset(sent_ba_lead2016, SentimentType == "NegativityGI"))
+t.test(Score ~ status, data = subset(sent_ba_lead2016, SentimentType == "PositivityGI"))
+t.test(Score ~ status, data = subset(sent_ba_lead2016, SentimentType == "SentimentGI"))
+summary(aov(Score ~ status * SentimentType, data = sent_ba_lead2016))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
