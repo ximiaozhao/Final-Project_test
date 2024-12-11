@@ -1,0 +1,647 @@
+---
+title: "Comparing New York Times Coverage on Trump 2016 vs. 2024"
+author: "Ximiao Zhao"
+subtitle: Term Paper for SURV727
+output: pdf_document
+---
+
+```{r,echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+#DONT SHOW IN REPORT!!!
+library(httr)
+library(jsonlite)
+library(striprtf)
+library(qdap)
+library(SentimentAnalysis)
+library(quanteda)
+library(vader)
+library(ggplot2)
+library(RedditExtractoR)
+library(tidyr)
+library(dplyr)
+library(gridExtra)
+library(lubridate)
+library(topicmodels)
+library(knitr)
+library(reshape2)
+library(kableExtra)
+library(webshot2)
+library(tibble)
+library(patchwork)
+library(grid)
+library(emmeans)
+library(cowplot)
+```
+
+
+```{r,echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+# DONT SHOW IN REPORT!!!
+# Get NYT Trump November Articles 
+## 2016
+mykey <- read_rtf("mykey.rtf") #NYT API Key
+url_2016 <- paste0("https://api.nytimes.com/svc/archive/v1/2016/11.json?api-key=", mykey)
+resquest_2016 <- GET(url_2016) #Nov 2016 articles
+
+response_2016 <- content(resquest_2016, as = "text", encoding = "UTF-8")
+nytdata_2016 <- fromJSON(response_2016, flatten = TRUE) 
+article_2016 <- nytdata_2016$response$docs 
+
+#Select articles headline contains "Trump"
+trump_2016 <- article_2016[grepl("Trump", article_2016$headline.main, ignore.case = TRUE),]
+
+#Create df that only contain data needed
+trump_df_2016 <- data.frame(
+  headline = trump_2016$headline.main,
+  lead_Paragraph = trump_2016$lead_paragraph,
+  abstract = trump_2016$abstract,
+  snippet = trump_2016$snippet,
+  pub.date = trump_2016$pub_date)
+
+## 2024
+url_2024 <- paste0("https://api.nytimes.com/svc/archive/v1/2024/11.json?api-key=", mykey)
+resquest_2024 <- GET(url_2024) #Nov 2024 articles
+
+response_2024 <- content(resquest_2024, as = "text", encoding = "UTF-8")
+nytdata_2024 <- fromJSON(response_2024, flatten = TRUE) 
+article_2024 <- nytdata_2024$response$docs 
+
+trump_2024 <- article_2024[grepl("Trump", article_2024$headline.main, ignore.case = TRUE),]
+
+trump_df_2024 <- data.frame(
+  headline = trump_2024$headline.main,
+  lead_Paragraph = trump_2024$lead_paragraph,
+  abstract = trump_2024$abstract,
+  snippet = trump_2024$snippet,
+  pub.date = trump_2024$pub_date)
+```
+
+
+# 1 Abstract
+
+This study investigates New York Times (NYT) articles attitude about Donald Trump during his first presidential election in 2016 and his second in 2024, focusing specifically on coverage immediately before and after the election days. It addresses two primary questions: (1) What were NYT sentiment toward Trump after the presidential election in 2016 and 2024, and how did these sentiments differ between the two periods? (2) What specific topics dominated NYT article headlines, and how did these topics shift between 2016 and 2024? To answer these questions, the study collected NYT articles published in November 2016 and November 2024. For Q1, sentiment analysis results indicate that NYT Trump coverage in 2024 is slightly more negative compared to 2016. For Q2, the term frequency analysis and Latent Dirichlet Allocation (LDA) modeling results reveal that in 2016, NYT coverage primarily focused on Trump's winning and his opponent, while in 2024, the focus shifted to his future domestic policies and current global issues.
+
+**Github Link: https://github.com/ximiaozhao/SURV727-Final-Paper.git**
+
+# 2 Introduction
+
+On June 16, 2015, Donald Trump formally announced his candidacy for president in New York City. Approximately one year and five months later, on November 8, 2016, Trump defeated Clinton to become the 45th President of the United States. Eight years later, on November 5, 2024, Trump defeated Harris, and will soon to become the 47th President of the United States. 
+
+From the very beginning, Trump has been consistently "attacked" the press, particularly legacy news organizations. Despite this, he has received extensive media attention, but not friendly ones. Previous studies have revealed that 80% of Trump's coverage are negative during his first 100 days in office (Patterson, 2017). But what about the time period after the election and before he officially assumed the presidency? This paper aims to examine how the legacy press, specifically The New York Times, portrayed Trump's at this two particular time period.
+
+The New York Times is one of the most influential legacy news organizations among voters, with millions of global subscribers. With a balanced-reporting reputation, tt is also one of the most trustworthy news organization. (Ji & Zhao, 2021). Given its prominence and credibility, this paper selects The New York Times as the data source. 
+
+That is to say, this paper aims to examine how the legacy press, specifically The New York Times, portrayed Trump's at this two particular time period. Specifically, this paper will answers two questions: (1) What are NYT sentiments toward Trump right before and after the presidential election in 2016 and 2024, and how did these sentiments differ between the two periods? (2) What specific topics dominated NYT articles in 2016 and 2024, and how did these topics shifted? In the following section, I will specify the the methodology and findings.
+
+# 3 Methodology
+
+## 3.1 Data Source
+
+Due to restrictions imposed by the NYT, this paper only able to collect article headline, abstracts and lead paragraph. Because the study did not find significant differences in analyzing headlines and lead paragraph, I will mainly focus on exploring article headlines. Data was collected via the New York Times API, focusing on articles published in November 2016 and November 2024. I filtering article headlines by keyword "Trump", and resulting in 645 Trump-related articles from November 2016 and 630 articles from November 2024.
+
+## 3.2 Analysis Technique
+
+### Sentiment Analysis
+
+To address Q1, which aims to investigate and compare the New York Times' attitude toward Trump in 2016 and 2024, I employed sentiment analysis techniques. Sentiment analysis is a natural language processing method used to assess the emotional tone or attitude expressed in text. It classifies content as positive, negative, or neutral based on certain standard, and provides sentiment scores to quantify the intensity of opinions. For this analysis, I employed two approaches. The two approaches provided cross-validation, and helped identify consistent trends, reducing the risk of bias.
+
+**SentimentAnalysis R package** This is a dictionary-based sentiment analysis technique, focusing on structured text. It provides measure such as positivity, negativity and overall sentiment scores. This approach is particularly useful for formal and academic text, which suitable for New York Times articles.  
+
+**Vader** Vader is a rule-based sentiment analysis approach. It is designed for short-form text such as headlines, which fit for my research purpose. Vader output contains compound score for overall sentiment and separate scores for positive, negative and neutral sentiment. 
+
+### Term Frequency
+
+To address Q2, which aims to investigate and compare the frequent terms and topics appearing in NYT Trump articles between 2016 and 2024, I conducted text-mining technique. 
+
+**Freq_term function** This is a text-mining tool that identifies the most frequently occurring terms in corpus. The output provided a straightforward and general overview of the most commonly keywords in article headline, offering an initial understanding of recurring topics.
+
+**Topic Modeling** To dive deeper, I employed Latent Dirichlet Allocation (LDA) model and extract top recurring topics of NYT Trump article headline. This approach provides insights on NYT main focus topics on Trump, and how these focuses have shifted from 2016 and 2024.
+
+# 4 Result
+
+## 4.1 Sentiment Analysis
+
+### Dictionary-based Approach
+
+For this approach, I utilized the analyzeSentiment function to calculate the sentiment scores (e.g. positivity, negativity, and overall sentiment) for article headlines in 2016 and 2024. SentimentAnalysis package include four dictionaries. Among the four, Harvard-IV General Inquirer dictionary (GI) was developed to analyze formal, written general text like newspaper, academic writing and professional communication, which fit well with NYT headlines. I fit a box plot to compare the three indicators between 2016 and 2024. I also conducted Welch two-sample t-test to prove whether there are statistically significant difference between the sentiments in 2016 and 2024.
+
+
+```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+# DONT SHOW IN REPORT!!!
+## Dictionary-based method 2016 vs. 2024
+#Dictionary-based method
+sent_head_2016 <- analyzeSentiment(iconv(as.character(trump_df_2016$headline),
+                                         to='UTF-8'))
+sent_head_2024 <- analyzeSentiment(iconv(as.character(trump_df_2024$headline),
+                                         to='UTF-8'))
+sent_lead_2016 <- analyzeSentiment(iconv(as.character(trump_df_2016$lead_Paragraph), 
+                                         to = 'UTF-8'))
+sent_lead_2024 <- analyzeSentiment(iconv(as.character(trump_df_2024$lead_Paragraph), 
+                                         to = 'UTF-8'))
+
+sent_lead_2016$year <- "2016"
+sent_lead_2016$Source <- "Leadparagraph"
+sent_lead_2024$year <- "2024"
+sent_lead_2024$Source <- "Leadparagraph"
+
+sent_head_2016$Source <- "Headline"
+sent_head_2024$Source <- "Headline"
+sent_head_2016$year <- "2016"
+sent_head_2024$year <- "2024"
+sent_combined_head <- rbind(sent_head_2016,sent_head_2024)
+sent_combined_lead <- rbind(sent_lead_2016,sent_lead_2024)
+
+sent_combined_head <- sent_combined_head %>%
+  select(year, Source, NegativityGI, PositivityGI, SentimentGI) %>%
+  pivot_longer(
+    cols = c(NegativityGI, PositivityGI, SentimentGI),
+    names_to = "SentimentType",
+    values_to = "Score")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(sent_combined_head, aes(x = year, y = Score, fill = SentimentType)) +
+  geom_boxplot() +
+  labs(title = "NYT Headline Dictionary-based Sentiment Comparison 2016 vs 2024",
+       x = "Year",
+       y = "Sentiment Score",
+       caption = "Figure 1") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2")
+```
+
+
+**Figure 1** Upon examining Figure 1, several outliers are evident, especially for 2016 SentimentGI scores. SentimentGI is calculated as (PositivityGI - NegativityGI)/Total World Count. The presence of outliers suggests that in November 2016, NYT published a number of articles with extreme positive and negative sentiments toward Trump. But, these opposing sentiments cancel each other out in the overall sentiment score calculation. This correspond with the t-test result below. After further investigation, I found 77 articles with extreme headline SentimentGI scores.
+
+The t test result finds that negativity scores show a statistically significant difference between the two time point (P < 0.05), with headlines in 2024 exhibit slightly higher negativity. This suggests that NYT show slightly more negative attitude toward Trump in 2024 compared to 2016. However, positivity and overall sentiment scores do not have significant differences between two years. These results indicate that overall, NYT attitude toward Trump does not noticeably differ.
+
+
+### Vader
+
+To provide a more complementary insight on NYT attitude toward Trump, I utilized rule-based Vader analysis. First, I calculated Vader compound score for each article and averaged the score results by day. Then, I plotted the 2016 and 2024 Vader average scores over time to capture how the sentiment trend changes. I also conducted Welch two-sample t-test to prove whether there are significant difference between the sentiments in two years.  
+
+```{r,echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+# DONT SHOW IN REPORT!!!
+## Vader score 2016 vs. 2024 for Headline
+#Headline
+va_head2016 <- vader_df(trump_df_2016$headline)
+va_head2024 <- vader_df(trump_df_2024$headline)
+va_head2016$pub.date <- trump_df_2016$pub.date
+va_head2024$pub.date <- trump_df_2024$pub.date
+va_head2016$year <- "2016"
+va_head2024$year <- "2024"
+va_head <- rbind(va_head2016, va_head2024)
+
+va_head$pub.date <- as.POSIXct(va_head$pub.date, format = "%Y-%m-%dT%H:%M:%OS%z")
+va_head$date <- format(as.Date(va_head$pub.date), "%m-%d")
+
+va_head.new <- va_head %>%
+  group_by(year, date) %>%
+  summarize(avg_compound = mean(compound, na.rm = TRUE),
+            median_compound = median(compound,na.rm = TRUE))
+va_head.new$date <- as.numeric(as.factor(va_head.new$date))
+```
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(va_head.new, 
+       aes(x = date, y = avg_compound, color = year, group = year)) +
+  geom_line(linewidth = 1) +
+  labs(title = "Vader Sentiment Scores of NYT Trump Headline Over Time 2016 vs. 2024",
+       x = "Publication Date in November",
+       y = "Average Compound Score",
+       color = "Year",
+       caption = "Figure 2") +
+  scale_x_continuous(breaks = seq(0, max(va_head.new$date), by = 2)) +
+  theme_minimal() +
+  scale_color_manual(values = c("2016" = "skyblue", "2024" = "darkblue"))
+```
+
+**Figure 2** The average VADER sentiment scores for both 2016 and 2024 fall within the range of -0.1 to 0.2, suggesting that the NYT's attitude toward Trump during these periods was generally neutral. However, there are still several sudden rise and dip. After investigation, I found headlines from November 20, 2016, included several positive terms such as "praise," "celebrate," and "awakening," which likely contributed to the elevated sentiment score on that day. In contrast, headlines from November 21, 2024, contained negative terms such as "kill," "fear," and "panic," which may explain the sharp decrease in sentiment.
+
+Welch Two Sample t-tests were conducted on both the raw compound scores and the averaged scores. The results indicate that neither the raw scores nor the averaged scores showed statistically significant differences between the two years. This finding suggests that the overall sentiment expressed in NYT November headlines toward Trump remained relatively consistent in 2016 and 2024. These results align with the trends observed in Figure 2.
+
+### Examine Article Types
+
+To further investigate factors that might affect sentiment scores, I compared sentiment scores across article types, and conducted ANOVA test. Results found that in 2016 article type have statistically significant effect on all sentiment indicators, with negativity have slightly stronger effect. However, no significant effect are found for 2024. I plotted the 2016 and 2024 sentiment scores across article types for direct comparison. 
+
+```{r,echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+#Look at article types:2016
+temp.sent_head_2016 <- sent_head_2016
+temp.sent_head_2016$type <- trump_2016$type_of_material
+
+temp.sent2016 <- temp.sent_head_2016 %>%
+  select(year, type, NegativityGI, PositivityGI, SentimentGI, ) %>%
+  pivot_longer(
+    cols = c(NegativityGI, PositivityGI, SentimentGI),
+    names_to = "SentimentType",
+    values_to = "Score")
+
+filter.temp.sent2016 <- temp.sent2016 %>%
+  filter(!type %in% c("Slideshow", "Video", "Interactive Feature", "Schedule", "Text"))
+summary(aov(Score ~ type * SentimentType, data = filter.temp.sent2016))
+
+y_limits <- c(-0.8, 0.8)
+y_breaks <- seq(-0.8, 0.8, by = 0.2)
+
+type_sent_2016 <- ggplot(filter.temp.sent2016, aes(x = type, y = Score, fill = SentimentType)) +
+  geom_boxplot(position = position_dodge(width = 0.8)) +
+  theme_minimal() +
+  labs(
+    title = "2016",
+    x = NULL,
+    y = "Sentiment Score"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")+
+  scale_y_continuous(limits = y_limits, breaks = y_breaks)
+
+filtered_data <- filter(filter.temp.sent2016, SentimentType == "SentimentGI")
+summary(aov(Score ~ type, data = subset(filter.temp.sent2016, SentimentType == "NegativityGI")))
+summary(aov(Score ~ type, data = subset(filter.temp.sent2016, SentimentType == "PositivityGI")))
+summary(aov(Score ~ type, data = subset(filter.temp.sent2016, SentimentType == "SentimentGI")))
+
+#Look at article type: 2024
+temp.sent_head_2024 <- sent_head_2024
+temp.sent_head_2024$type <- trump_2024$type_of_material
+temp.sent2024 <- temp.sent_head_2024 %>%
+  select(year, type, NegativityGI, PositivityGI, SentimentGI, ) %>%
+  pivot_longer(
+    cols = c(NegativityGI, PositivityGI, SentimentGI),
+    names_to = "SentimentType",
+    values_to = "Score")
+summary(aov(Score ~ type * SentimentType, data = temp.sent2024))
+
+filter.temp.sent2024 <- temp.sent2024 %>%
+  filter(!type %in% c("Slideshow", "Video", "Interactive Feature"))
+
+summary(aov(Score ~ type * SentimentType, data = filter.temp.sent2024))
+
+type_sent_2024 <-ggplot(filter.temp.sent2024, aes(x = type, y = Score, fill = SentimentType)) +
+  geom_boxplot(position = position_dodge(width = 0.8)) +
+  theme_minimal() +
+  labs(
+    title = "2024",
+    x = NULL,
+    y = NULL) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(limits = y_limits, breaks = y_breaks)
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+combined_type_sent <- grid.arrange(
+  type_sent_2016, type_sent_2024,
+  ncol = 2,
+  top = textGrob(
+    "Article Type and Sentiment Scores Interaction",
+    gp = gpar(fontsize = 16)),
+  bottom = textGrob(
+    "Article Type
+    Figure 3",
+    gp = gpar(fontsize = 12)))
+```
+
+
+**Figure 3** In 2016, article headlines under Editorial, Op-Ed and News Analysis show greater variation in three sentiment indicators. Most article type have higher Negativity scores, and the overall sentiment score is generally neutral but slightly negative. In 2024, Op-Ed displays more negativity than 2016, which might reflect the critical tone of articles published under this type. Another key finding is that overall sentiment scores in 2024 are more polarized than 2016, with evidently more extreme outliers, which might suggest that there are more emotional articles in 2024 than 2016. 
+
+
+## 4.2 Key Topic Analysis
+
+### Term Frequency
+
+Examining frequent terms from different time periods (e.g., 2016 vs. 2024) could observe how the focus of Trump coverage shifted. I used frequent term analysis from Qdap R package to explore the most common terms, providing an initial understanding of recurring topics. To pre-processed the text, I tokinized the headlines and break them into individual terms. Then, I identified a list of stop words, and removed them from the text to enhance analysis. Then, I applied freq_term function and organized the top20 frequent term results into bar chart.
+
+```{r,echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+# DONT SHOW IN REPORT!!!
+# Sentiment Analysis
+## Compare frequent terms 2016 vs. 2024
+#Remove stop words
+custom_stopwords <- c("trump", "donald", "trumpa", "trumps", "york", "president", "state", "mr", "presidentelect", "heres", "day", "need", "know", "election", "say", "trump's", "here's", "new", "Trump's","Trump’s","us", "wednesday", "tuesday", "monday", "US", "U.S", "Here's", "Says", "pick", "picks", "Pick", "Picks", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z")
+
+custom_stopwords_para <- c("trump", "donald", "trumpa", "trumps", "york", "president", "state", "mr", "presidentelect", "heres", "day", "need", "know", "election", "say", "trump's", "here's", "new", "Trump's","Trump’s","us", "wednesday", "tuesday", "monday", "US", "U.S", "Here's", "Here’s", "Says", "pick", "picks", "Pick", "Picks", "one", "said", "get", "morning", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z")
+
+clean_trump2016_headline <- tokens(trump_df_2016$headline) %>%
+  tokens_remove(stopwords("english")) %>%
+  tokens_remove(custom_stopwords)
+
+clean_trump2024_headline <- tokens(trump_df_2024$headline) %>%
+  tokens_remove(stopwords("english")) %>%
+  tokens_remove(custom_stopwords)
+
+freq2016_head <- freq_terms(clean_trump2016_headline, 20)
+freq2016_head_plot <- ggplot(data = freq2016_head, aes(x = FREQ, y = reorder(WORD, FREQ))) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "2016",
+    x = "Frequency",
+       y = "Terms") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+freq2024_head <- freq_terms(clean_trump2024_headline, 20)
+freq2024_head_plot <- ggplot(data = freq2024_head, aes(x = FREQ, y = reorder(WORD, FREQ))) +
+  geom_bar(stat = "identity", fill = "darkblue") +
+  labs(title = "2024",
+    x = "Frequency",
+       y = "Terms") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+combined_head_plot <- freq2016_head_plot | freq2024_head_plot
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+combined_head_plot <- grid.arrange(
+  freq2016_head_plot, freq2024_head_plot,
+  ncol = 2,
+  top = textGrob(
+    "Top 20 Frequent Terms in NYT Trump Headlines 2016 vs 2024",
+    gp = gpar(fontsize = 16)),
+  bottom = textGrob(
+    "Figure 4",
+    gp = gpar(fontsize = 12)))
+```
+
+**Figure 4** It is evident that the frequent terms in 2016 and 2024 reflect a significant shift. In 2016, frequent terms such as "victory," "win," "new," and "transition" highlight that the main focus is about Trump's election win and transition to administration. Terms like "clinton" and "hillary" highlights discussion about Trump's opponent in the 2016 presidential race, while "obama" reflect the former administration involvement in the election. Term "climate" suggests that Trump's new climate policy probably attracting significant attention at that time. These terms indicate that in 2016, NYT Trump coverage mainly focus on Trump's election results, political power transitioning and future domestic policy.   
+
+In 2024, frequent terms such as "victory," "win," and "return," still emphasize Trump's electoral triumph. However, the focus appears to shift toward his future administration and policy, as indicate by terms like "cabinet," "administration," and "trade." Term "ukraine" receive high frequency, suggests that Trump's attitude toward this significant global issues is one of the major topic in NYT Trump articles.  
+
+Worth noticing, "clinton" and "harris" both appeared as top frequent terms in Trump's coverage, but term "clinton" receive higher frequency in 2016 than term "harris" in 2024. Similarly, as the former administration, "biden" appears less frequent compared to "obama" in 2016, possibly suggesting that Biden have less involvement in the 2024 presidential election.  
+
+
+### Topic Modeling
+
+To further identify the pattern in NYT Trump coverage and compare the key themes over time, I employed Latent Dirichlet Allocation (LDA) model. Again, I removed the stop words from the text. Because the data size is not large, I set the critical parameter K =5 to centralize the topic.  
+
+```{r,echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+# Topic Modeling 2016 vs. 2024
+#Headline 2016
+#Tokenization
+corpus_head2016 <- corpus(trump_df_2016$headline,
+                          docid_field = "doc_id",
+                          text_field = "text")
+token_head2016 <- tokens(corpus_head2016, 
+                         remove_punct = TRUE, 
+                         remove_numbers = TRUE, 
+                         remove_symbols = TRUE) %>% 
+                         tokens_tolower() 
+# Lemmatization
+lemmaData <- read.csv2("~/Desktop/MS-SUDS/2024Fall/SURV727 Fundamental of Data Display Computing/Final Paper/baseform_en.tsv", 
+                       sep="\t", 
+                       header=FALSE, 
+                       encoding = "UTF-8", 
+                       stringsAsFactors = F)
+#Check if have NA
+anyNA(lemmaData$V1)
+anyNA(lemmaData$V2)
+lemmaData <- lemmaData[!is.na(lemmaData$V1) & !is.na(lemmaData$V2), ] #Drop NA
+
+proc_head2016 <-  tokens_replace(token_head2016, 
+                                 lemmaData$V1, 
+                                 lemmaData$V2,
+                                 valuetype = "fixed")
+
+#Remove stop word based on previous experiments
+proc_head2016 <- proc_head2016 %>% 
+  tokens_remove(stopwords("english")) %>%
+  tokens_remove(custom_stopwords)
+
+#Create DTM 
+dtm_head2016 <- dfm(proc_head2016)
+#dtm_head2016_viz <- dtm_head2016 #save copy for visualization
+
+#Trimming
+dtm_head2016 <- dfm_trim(dtm_head2016, 
+                         min_docfreq = 10, 
+                         max_docfreq = ndoc(dtm_head2016))
+
+#Keep only letters... brute force
+dtm_head2016  <- dfm_select(dtm_head2016, 
+                            pattern = "[a-z]", 
+                            valuetype = "regex", 
+                            selection = 'keep')
+colnames(dtm_head2016) <- stringi::stri_replace_all_regex(colnames(dtm_head2016), 
+                                                          "[^_a-z]","")
+dtm_head2016 <- dfm_compress(dtm_head2016, "features")
+
+#Drop NA rows
+sel_idx_2016 <- rowSums(dtm_head2016) > 0
+dtm_head2016 <- dtm_head2016[sel_idx_2016, ]
+
+#Fit LDA model
+# Set K=7 based on previous experiments
+K_2016 <- 5
+set.seed(3453) #UID last 4 digits
+LDA_head2016 <- LDA(dtm_head2016, K_2016, method="Gibbs", 
+                    control=list(iter = 500, 
+                                 verbose = 25, 
+                                 alpha = 1/7)) # 1/K
+
+#Select top terms per topic
+top_head2016 <- terms(LDA_head2016, 10)
+#Paste them into a string for interpret
+topic_head2016 <- apply(top_head2016, #this contains only topics
+                        2, 
+                        paste, 
+                        collapse=" ")
+
+#Calculate average probability
+result_head2016 <- posterior(LDA_head2016)
+theta_head2016 <- result_head2016$topics
+topic_p <- colSums(theta_head2016) / nrow(dtm_head2016)
+names(topic_p) <- topic_head2016
+sorted_head2016 <- sort(topic_p, decreasing = TRUE)
+
+
+#Headline 2024
+#Tokenization
+corpus_head2024 <- corpus(trump_df_2024$headline,
+                          docid_field = "doc_id",
+                          text_field = "text")
+token_head2024 <- tokens(corpus_head2024, 
+                         remove_punct = TRUE, 
+                         remove_numbers = TRUE, 
+                         remove_symbols = TRUE) %>% 
+  tokens_tolower() 
+
+proc_head2024 <-  tokens_replace(token_head2024, 
+                                 lemmaData$V1, 
+                                 lemmaData$V2,
+                                 valuetype = "fixed")
+
+#Remove stop word based on previous experiments
+proc_head2024 <- proc_head2024 %>% 
+  tokens_remove(stopwords("english")) %>%
+  tokens_remove(custom_stopwords)
+
+#Create DTM 
+dtm_head2024 <- dfm(proc_head2024)
+
+#Trimming
+dtm_head2024 <- dfm_trim(dtm_head2024, 
+                         min_docfreq = 10, 
+                         max_docfreq = ndoc(dtm_head2024))
+
+#Keep only letters... brute force
+dtm_head2024  <- dfm_select(dtm_head2024, 
+                            pattern = "[a-z]", 
+                            valuetype = "regex", 
+                            selection = 'keep')
+colnames(dtm_head2024) <- stringi::stri_replace_all_regex(colnames(dtm_head2024), 
+                                                          "[^_a-z]","")
+dtm_head2024 <- dfm_compress(dtm_head2024, "features")
+#dtm_head2024.save <- dtm_head2024 #save copy
+
+#Drop NA rows
+sel_idx_2024 <- rowSums(dtm_head2024) > 0
+dtm_head2024 <- dtm_head2024[sel_idx_2024, ]
+
+#Fit LDA model
+# Set K=7 based on previous experiments
+K_2024 <- 5
+set.seed(3453) #UID last 4 digits
+LDA_head2024 <- LDA(dtm_head2024, K_2024, method="Gibbs", 
+                    control=list(iter = 500, 
+                                 verbose = 25, 
+                                 alpha = 1/7)) # 1/K
+
+#Select top terms per topic
+top_head2024 <- terms(LDA_head2024, 10)
+#Paste them into a string for interpret
+topic_head2024 <- apply(top_head2024, #this contains only topics
+                        2, 
+                        paste, 
+                        collapse=" ")
+
+#Calculate average probability
+result_head2024 <- posterior(LDA_head2024)
+theta_head2024 <- result_head2024$topics
+topic_p_2024 <- colSums(theta_head2024) / nrow(dtm_head2024)
+names(topic_p_2024) <- topic_head2024
+sorted_head2024 <- sort(topic_p_2024, decreasing = TRUE)
+
+#Organize result
+df_head2016 <- data.frame(
+  Year = "2016",
+  Top_Topic = names(sorted_head2016))
+df_head2024 <- data.frame(
+  Year = "2024",
+  Top_Topic = names(sorted_head2024))
+df_combined_head <- bind_rows(df_head2016, df_head2024)
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+#Visualization
+#2016
+pubdate_2016_viz <- trump_df_2016$pub.date[sel_idx_2016]
+viz_head2016 <- data.frame(dates = as.Date(pubdate_2016_viz), theta_head2016)
+
+viz_head2016_trend <- viz_head2016 %>%
+  group_by(dates) %>%
+  summarise(across(starts_with("X"), \(x) mean(x, na.rm = TRUE)))
+
+terms(LDA_head2016, 10)
+topic_head2016
+
+colnames(viz_head2016_trend)[colnames(viz_head2016_trend) != "dates"] <- c(
+  "Obama meet voter transition keep business may brief security see",
+  "Climate policy change can look america help presidency time see",
+  "Brief Clinton evening Hillary Friday obama business security help win",
+  "Victory tower white move deal time may help presidency win",
+  "Win vote fight right call see meet clinton white security")
+
+# Reshape for ggplot
+viz_head2016_long <- viz_head2016_trend %>%
+  pivot_longer(cols = -dates, names_to = "Topic", values_to = "Proportion")
+
+# Plot trends
+plot_head2016 <- ggplot(viz_head2016_long, aes(x = dates, y = Proportion, color = Topic)) +
+  geom_line(size = 0.7) +
+  labs(
+    title = "2016 NYT Trump Coverage Headline Key Topic Trends Over Time",
+    x = "Publication Date",
+    y = "Average Topic Proportion"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +  
+  guides(color = guide_legend(nrow = 7))
+#ggsave(filename = "~/Desktop/MS-SUDS/2024Fall/SURV727 Fundamental of Data Display Computing/Final Paper/2016 NYT Trump Coverage Headline Key Topic Trends Over Time.jpg",width = 8, height = 6, units = "in")
+
+#2024
+pubdate_2024_viz <- trump_df_2024$pub.date[sel_idx_2024]
+viz_head2024 <- data.frame(dates = as.Date(pubdate_2024_viz), theta_head2024)
+
+viz_head2024_trend <- viz_head2024 %>%
+  group_by(dates) %>%
+  summarise(across(starts_with("X"), \(x) mean(x, na.rm = TRUE)))
+
+terms(LDA_head2024, 10)
+topic_head2024
+
+colnames(viz_head2024_trend)[colnames(viz_head2024_trend) != "dates"] <- c(
+  "return secretary power big expect musk gaetz presidency choice cabinet",
+  "house second term white democrat lead administration first ally biden",
+  "win vote can republican first gop see musk ally heres",
+  "victory case harris end mean make ukraine choice biden presidency",
+  "plan tariff leader ukraine take cabinet make trade heres see")
+
+viz_head2024_long <- viz_head2024_trend %>%
+  pivot_longer(cols = -dates, names_to = "Topic", values_to = "Proportion")
+
+# Plot trends
+plot_head2024 <- ggplot(viz_head2024_long, aes(x = dates, y = Proportion, color = Topic)) +
+  geom_line(size = 0.7) +
+  labs(
+    title = "2024 NYT Trump Coverage Headline Key Topic Trends Over Time",
+    x = "Publication Date",
+    y = "Average Topic Proportion",
+    caption = "Figure 5"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")+  
+  guides(color = guide_legend(nrow = 7))
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+kable_head <- knitr::kable(
+    df_combined_head,
+    col.names = c("Year", "Topic"),
+    caption = "Table 1: Topic Modeling for NYT Trump Headline 2016 vs. 2024",
+    row.names = FALSE,
+    format = "latex")
+kable_head
+```
+
+
+**Table 1** The topics are ranked by their probability. Upon examining, it reveals significant focus shift in NYT Trump coverage between 2016 and 2024. In 2016, the top 5 key themes mainly focuses on Trump's electoral victory and the surrounding political landscape, like Clinton and Obama. The fourth key themes, which containing "climate", "policy", "change", highlights that Trump's controversial stance on climate policy is one of the major media focus. In 2024, Trump's surrounding political landscape still attract central coverage, as "harris" and "musk" appeared in the first and second themes. However, it is clear that the major focus of NYT coverage have shifted to Trump's future administration and global policies, as terms like "ukraine", "tariff", "plan" indicated. Both modeling results in 2016 and 2024 coincide with the frequent term analysis.   
+
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+plot_head2016
+plot_head2024
+```
+
+
+**Figure 5** To understand the topic trend over time, I plotted each topics average proportion throughout November. In 2016, the Clinton trend (1st trend) receive significant media coverage a few days before the election day November 8th. The coverage drops sharply after that day. The obama trend (3rd trend) also receive significant media coverage on November 26, which possibly due to Obama's speech on the death of Fidel Castro. In 2026, the Harris/Ukraine/Biden trend (4th trend) receive higher NYT coverage a few days before the election day November 5th, and the coverage drop sharply right after. The tariff plan trend (2nd trend) increasingly receive high media coverage and significantly rise at November 25, which possibly due to Trump's proposal on new tariff plan. 
+
+# 5 Conclusion and Discussion
+
+## 5.1 Conclusion
+
+In conclusion: 
+
+(1) NYT sentiment toward Trump is slightly more negative in 2024 than in 2016, possibly due to Trump's controversial behaviors in the past eight years. Besides this, neither of the sentiment analysis indicators have significant results. To conclude, overall, NYT express consistently neutral sentiments toward Trump after his success election to presidency in 2016 and 2024. Previous literature mentioned that NYT use higher number of moral terms on Trump's coverage, insisting on coverage neutrality (Ji & Zhao, 2021). So, this result is expected. 
+
+(2) One interesting find is the significant effect of article type on sentiment score found in 2016, with Negativity show slightly stronger effect. Another key finding is that the overall sentiment scores are more polarized than scores in 2016, which might coincide with the current polarized political environment.  
+
+(3) Results from the frequency term analysis and topic modeling reveal that NYT main focus on Trump have shifts. In 2016, NYT Trump coverage focus on his unexpected success, but also give equally high attention to his opponent and former administration, only cast minor coverage on his future domestic policy. In 2024, Trump, his party, and his surrounding like Musk, all share high media exposure. With a more complicated global situation, Trump's future administration, his stance on domestic policy and attitude toward global issues become the focus. 
+
+## 5.2 Limitation
+
+Current study contain number of limitations. This study have very limited data source and relatively small sample size, so the analysis might not be ideal. LDA model also present obstacles such as subject to human interpretation and predefined number of topics by human. Also, though SentimentAnalysis package and Vader could provide direct quantified results, when comes to analyze sophisticated and concise text like news article headlines, these two methods still have limitation. As certain positive terms might have negative tone under certain circumstance. 
+
+# 6 Reference
+
+Patterson, Thomas E., News Coverage of Donald Trump's First 100 Days (May 1, 2017). HKS Working Paper No. RWP17-040, Available at SSRN: https://ssrn.com/abstract=3040911 or http://dx.doi.org/10.2139/ssrn.3040911
+
+Ji, Q., & Zhao, W. (2021). Moralizing Campaign Coverage: A Computerized Textual Analysis of <i>New York Times’</i> Reporting on Clinton and Trump During the 2016 Presidential Election. Journalism Practice, 17(6), 1288–1302. https://doi.org/10.1080/17512786.2021.1976071
+
+
+
