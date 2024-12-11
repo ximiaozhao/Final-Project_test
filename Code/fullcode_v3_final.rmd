@@ -179,6 +179,10 @@ summary(aov(Score ~ type * SentimentType, data = temp.sent2024))
 filter.temp.sent2024 <- temp.sent2024 %>%
   filter(!type %in% c("Slideshow", "Video", "Interactive Feature"))
 
+#No significant results found
+summary(aov(Score ~ type, data = subset(filter.temp.sent2024, SentimentType == "NegativityGI")))
+summary(aov(Score ~ type, data = subset(filter.temp.sent2024, SentimentType == "PositivityGI")))
+summary(aov(Score ~ type, data = subset(filter.temp.sent2024, SentimentType == "SentimentGI")))
 summary(aov(Score ~ type * SentimentType, data = filter.temp.sent2024))
 
 type_sent_2024 <-ggplot(filter.temp.sent2024, aes(x = type, y = Score, fill = SentimentType)) +
